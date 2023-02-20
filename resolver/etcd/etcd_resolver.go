@@ -3,13 +3,16 @@ package etcd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path"
 	"sync"
 	"time"
 
 	resolver2 "ngrpc/resolver"
 
+	"github.com/kanengo/goutil/pkg/log"
 	"github.com/kanengo/goutil/pkg/utils"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/resolver"
@@ -116,37 +119,62 @@ func (e *etcdResolver) watcher() {
 	watcher := e.cli.Watch(e.ctx, e.svrPath, clientv3.WithPrefix())
 	go func() {
 		defer e.wg.Done()
-		backoffIndex := 0
 		for {
-			var err error
-			var timer *time.Timer
 			select {
 			case <-e.rn:
+				backoffIndex := 0
+				var err error
+				var timer *time.Timer
 				var state *resolver.State
-				state, err = e.fetch()
-				if err != nil {
-					e.cc.ReportError(err)
-				} else {
-					err = e.cc.UpdateState(*state)
+				for {
+					state, err = e.fetch()
+					if err != nil {
+						switch err {
+						case context.Canceled:
+							if timer != nil {
+								timer.Stop()
+							}
+							return
+						case context.DeadlineExceeded:
+							log.Warn("etcd fetch deadline exceeded")
+						case rpctypes.ErrEmptyKey:
+							log.Warn("etcd fetch empty key")
+						case rpctypes.ErrKeyNotFound:
+							log.Warn("etcd fetch key not found")
+						default:
+						}
+						e.cc.ReportError(err)
+					} else {
+						err = e.cc.UpdateState(*state)
+					}
+					if err == nil {
+						backoffIndex = 0
+						if timer != nil {
+							timer.Stop()
+						}
+						break
+					} else {
+						if backoffIndex >= 64 {
+							e.cc.ReportError(errors.New("etcd: failed to fetch,retry too many times"))
+							break
+						}
+						backOff := backoffIndex * 2
+						if backOff == 0 {
+							backOff = 1
+						}
+						backoffIndex = backOff
+						timer = time.NewTimer(time.Duration(backOff) * time.Second)
+						select {
+						case <-timer.C:
+						case <-e.ctx.Done():
+							timer.Stop()
+							return
+						}
+					}
 				}
+
 			case <-e.ctx.Done():
 				return
-			}
-			if err == nil {
-				backoffIndex = 0
-			} else {
-				backOff := backoffIndex * 2
-				if backOff == 0 {
-					backOff = 1
-				}
-				backoffIndex += 1
-				timer = time.NewTimer(time.Duration(backOff) * time.Second)
-				select {
-				case <-timer.C:
-				case <-e.ctx.Done():
-					timer.Stop()
-					return
-				}
 			}
 		}
 	}()
