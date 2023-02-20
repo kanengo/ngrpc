@@ -44,6 +44,7 @@ func (b *etcdBuilder) Build(target resolver.Target, cc resolver.ClientConn, opts
 
 	r.wg.Add(2)
 	go r.watcher()
+	go r.loopFetch()
 
 	return r, nil
 }
@@ -112,72 +113,78 @@ func (e *etcdResolver) fetch() (*resolver.State, error) {
 	return state, nil
 }
 
-func (e *etcdResolver) watcher() {
+func (e *etcdResolver) loopFetch() {
 	defer e.wg.Done()
-	ticker := time.NewTicker(time.Minute)
-	//watchCtx := clientv3.WithRequireLeader(e.ctx)
-	watcher := e.cli.Watch(e.ctx, e.svrPath, clientv3.WithPrefix())
-	go func() {
-		defer e.wg.Done()
-		for {
-			select {
-			case <-e.rn:
-				backoffIndex := 0
-				var err error
-				var timer *time.Timer
-				var state *resolver.State
-				for {
-					state, err = e.fetch()
-					if err != nil {
-						switch err {
-						case context.Canceled:
-							if timer != nil {
-								timer.Stop()
-							}
-							return
-						case context.DeadlineExceeded:
-							log.Warn("etcd fetch deadline exceeded")
-						case rpctypes.ErrEmptyKey:
-							log.Warn("etcd fetch empty key")
-						case rpctypes.ErrKeyNotFound:
-							log.Warn("etcd fetch key not found")
-						default:
+	for {
+		select {
+		case <-e.rn:
+			logger.Info("fetch remote")
+			backoffIndex := 0
+			var err error
+			var timer *time.Timer
+			var state *resolver.State
+			for {
+				state, err = e.fetch()
+				if err != nil {
+					switch err {
+					case context.Canceled:
+						if timer != nil {
+							timer.Stop()
 						}
-						e.cc.ReportError(err)
-					} else {
-						err = e.cc.UpdateState(*state)
+						return
+					case context.DeadlineExceeded:
+						log.Warn("etcd fetch deadline exceeded")
+					case rpctypes.ErrEmptyKey:
+						log.Warn("etcd fetch empty key")
+					case rpctypes.ErrKeyNotFound:
+						log.Warn("etcd fetch key not found")
+					default:
 					}
-					if err == nil {
-						backoffIndex = 0
+					e.cc.ReportError(err)
+				} else {
+					err = e.cc.UpdateState(*state)
+				}
+				if err == nil {
+					backoffIndex = 0
+					if timer != nil {
+						timer.Stop()
+					}
+					break
+				} else {
+					if backoffIndex >= 64 {
+						e.cc.ReportError(errors.New("etcd: failed to fetch,retry too many times"))
 						if timer != nil {
 							timer.Stop()
 						}
 						break
-					} else {
-						if backoffIndex >= 64 {
-							e.cc.ReportError(errors.New("etcd: failed to fetch,retry too many times"))
-							break
-						}
-						backOff := backoffIndex * 2
-						if backOff == 0 {
-							backOff = 1
-						}
-						backoffIndex = backOff
-						timer = time.NewTimer(time.Duration(backOff) * time.Second)
-						select {
-						case <-timer.C:
-						case <-e.ctx.Done():
-							timer.Stop()
-							return
-						}
+					}
+					backOff := backoffIndex * 2
+					if backOff == 0 {
+						backOff = 1
+					}
+					backoffIndex = backOff
+					timer = time.NewTimer(time.Duration(backOff) * time.Second)
+					select {
+					case <-timer.C:
+						timer.Stop()
+					case <-e.ctx.Done():
+						timer.Stop()
+						return
 					}
 				}
-
-			case <-e.ctx.Done():
-				return
 			}
+		case <-e.ctx.Done():
+			return
 		}
-	}()
+	}
+}
+
+func (e *etcdResolver) watcher() {
+	defer e.wg.Done()
+	ticker := time.NewTicker(time.Minute)
+
+	watcher := e.cli.Watch(e.ctx, e.svrPath, clientv3.WithPrefix())
+
 	for {
 		select {
 		case <-ticker.C:
@@ -185,7 +192,12 @@ func (e *etcdResolver) watcher() {
 		case watcherResponse := <-watcher:
 			err := watcherResponse.Err()
 			if err != nil {
+				logger.Error("watcher failed:", err)
+				e.cc.ReportError(err)
 				return
+			}
+			if len(watcherResponse.Events) > 0 {
+				e.ResolveNow(resolver.ResolveNowOptions{})
 			}
 		}
 	}
