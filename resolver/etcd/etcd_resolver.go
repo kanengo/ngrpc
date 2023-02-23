@@ -10,7 +10,6 @@ import (
 
 	resolver2 "ngrpc/resolver"
 
-	"github.com/kanengo/goutil/pkg/log"
 	"github.com/kanengo/goutil/pkg/utils"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -84,6 +83,7 @@ func (e *etcdResolver) fetch() (*resolver.State, error) {
 		logger.Error("fetchAll failed:", err)
 		return nil, err
 	}
+
 	resolverAddress := make([]resolver.Address, 0, len(getResponse.Kvs))
 	for _, kv := range getResponse.Kvs {
 		address := utils.SliceByteToStringUnsafe(kv.Key)
@@ -133,12 +133,13 @@ func (e *etcdResolver) loopFetch() {
 						}
 						return
 					case context.DeadlineExceeded:
-						log.Warn("etcd fetch deadline exceeded")
+						logger.Warning("etcd fetch deadline exceeded")
 					case rpctypes.ErrEmptyKey:
-						log.Warn("etcd fetch empty key")
+						logger.Warning("etcd fetch empty key")
 					case rpctypes.ErrKeyNotFound:
-						log.Warn("etcd fetch key not found")
+						logger.Warning("etcd fetch key not found")
 					default:
+						logger.Error("etch fetch failed:", err)
 					}
 					e.cc.ReportError(err)
 				} else {
@@ -152,6 +153,7 @@ func (e *etcdResolver) loopFetch() {
 					break
 				} else {
 					if backoffIndex >= 64 {
+						logger.Warning("fetch failed retry too much times")
 						e.cc.ReportError(errors.New("etcd: failed to fetch,retry too many times"))
 						if timer != nil {
 							timer.Stop()
@@ -182,12 +184,13 @@ func (e *etcdResolver) loopFetch() {
 func (e *etcdResolver) watcher() {
 	defer e.wg.Done()
 	ticker := time.NewTicker(time.Minute)
-
+	defer ticker.Stop()
 	watcher := e.cli.Watch(e.ctx, e.svrPath, clientv3.WithPrefix())
 
 	for {
 		select {
 		case <-ticker.C:
+			//定时刷新一下
 			e.ResolveNow(resolver.ResolveNowOptions{})
 		case watcherResponse := <-watcher:
 			err := watcherResponse.Err()
@@ -196,9 +199,12 @@ func (e *etcdResolver) watcher() {
 				e.cc.ReportError(err)
 				return
 			}
+
 			if len(watcherResponse.Events) > 0 {
 				e.ResolveNow(resolver.ResolveNowOptions{})
 			}
+		case <-e.ctx.Done():
+			return
 		}
 	}
 }

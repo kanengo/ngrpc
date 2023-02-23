@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ngrpc/errors"
+
 	"github.com/kanengo/goutil/pkg/metric"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/base"
@@ -70,6 +72,7 @@ func (*wrrPickerBuilder) Build(info base.PickerBuildInfo) balancer.Picker {
 
 type serverInfo struct {
 	cpu     int64
+	mem     int64
 	success uint64
 }
 
@@ -155,7 +158,9 @@ func (p *wrrPicker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
 	done := func(doneInfo balancer.DoneInfo) {
 		ev := int64(0)
 		if doneInfo.Err != nil {
-			//TODO 区分错误码
+			if e, ok := errors.FromError(doneInfo.Err); ok && e.Internal() {
+				ev = 1
+			}
 		}
 		conn.err.Add(ev)
 
