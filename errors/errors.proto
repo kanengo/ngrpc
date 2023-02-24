@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package errors;
+
+option go_package = "github.com/kanengo/ngrpc/errors;errors";
+
+message Status {
+  int32 code = 1;
+  string message = 2;
+  map<string,string> metadata = 3;
+}
+//protoc --proto_path=./ --go_out=./ ./errors.proto

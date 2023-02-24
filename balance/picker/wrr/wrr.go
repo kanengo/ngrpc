@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ngrpc/errors"
+	"github.com/kanengo/ngrpc/errors"
 
 	"github.com/kanengo/goutil/pkg/metric"
 	"google.golang.org/grpc/balancer"
@@ -158,7 +158,7 @@ func (p *wrrPicker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
 	done := func(doneInfo balancer.DoneInfo) {
 		ev := int64(0)
 		if doneInfo.Err != nil {
-			if e, ok := errors.FromError(doneInfo.Err); ok && e.Internal() {
+			if e := errors.FromError(doneInfo.Err); e.Internal() {
 				ev = 1
 			}
 		}

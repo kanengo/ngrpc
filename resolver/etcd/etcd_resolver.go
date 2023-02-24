@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	resolver2 "ngrpc/resolver"
+	resolver2 "github.com/kanengo/ngrpc/resolver"
 
 	"github.com/kanengo/goutil/pkg/utils"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"

@@ -1,9 +1,10 @@
-module ngrpc
+module github.com/kanengo/ngrpc
 
 go 1.19
 
 require (
 	github.com/kanengo/goutil v1.0.0
+	go.etcd.io/etcd/api/v3 v3.5.7
 	go.etcd.io/etcd/client/v3 v3.5.7
 	google.golang.org/grpc v1.52.3
 )
@@ -20,7 +21,6 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
-	go.etcd.io/etcd/api/v3 v3.5.7 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.7 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
