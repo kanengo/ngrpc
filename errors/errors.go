@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -37,6 +38,12 @@ func (e *Error) Internal() bool {
 
 func (e *Error) Unwrap() error {
 	return e.cause
+}
+
+func (e *Error) ToGrpcStatus() *status.Status {
+	s := status.New(codes.Code(e.Code), e.Message)
+
+	return s
 }
 
 func FromError(err error) *Error {
