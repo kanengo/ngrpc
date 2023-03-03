@@ -53,7 +53,7 @@ func Listener(lis net.Listener) ServerOption {
 
 func UnaryInterceptor(in ...grpc.UnaryServerInterceptor) ServerOption {
 	return func(s *Server) {
-		s.unaryInt = in
+		s.unaryInts = in
 	}
 }
 
@@ -71,7 +71,7 @@ type Server struct {
 	endpoint   *url.URL
 	timeout    time.Duration
 	middleware matcher.Matcher[middleware.Middleware]
-	unaryInt   []grpc.UnaryServerInterceptor
+	unaryInts  []grpc.UnaryServerInterceptor
 	grpcOpts   []grpc.ServerOption
 	health     *health.Server
 	lis        net.Listener
@@ -79,14 +79,12 @@ type Server struct {
 
 func NewServer(opts ...ServerOption) *Server {
 	srv := &Server{
-		Server:     nil,
-		baseCtx:    nil,
-		endpoint:   nil,
-		timeout:    0,
+		baseCtx:    context.Background(),
+		timeout:    3 * time.Second,
 		middleware: matcher.New[middleware.Middleware](),
-		unaryInt:   nil,
+		unaryInts:  nil,
 		grpcOpts:   nil,
-		health:     nil,
+		health:     health.NewServer(),
 	}
 
 	for _, o := range opts {
@@ -97,8 +95,8 @@ func NewServer(opts ...ServerOption) *Server {
 		srv.unaryServerInterceptor(),
 	}
 
-	if len(srv.unaryInt) > 0 {
-		unaryInts = append(unaryInts, srv.unaryInt...)
+	if len(srv.unaryInts) > 0 {
+		unaryInts = append(unaryInts, srv.unaryInts...)
 	}
 
 	grpcOpts := []grpc.ServerOption{
@@ -113,11 +111,12 @@ func NewServer(opts ...ServerOption) *Server {
 		grpcOpts = append(grpcOpts, srv.grpcOpts...)
 	}
 
+	srv.Server = grpc.NewServer(grpcOpts...)
+
 	if srv.health != nil {
 		grpc_health_v1.RegisterHealthServer(srv.Server, srv.health)
 	}
 
-	srv.Server = grpc.NewServer(grpcOpts...)
 	reflection.Register(srv.Server)
 
 	return srv

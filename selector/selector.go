@@ -36,6 +36,12 @@ type DoneInfo struct {
 	BytesSent bool
 
 	BytesReceived bool
+
+	ReplyMD ReplyMD
+}
+
+type ReplyMD interface {
+	Get(key string) string
 }
 
 type DoneFunc func(ctx context.Context, di DoneInfo)
