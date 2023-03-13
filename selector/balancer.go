@@ -10,6 +10,10 @@ type WeightNode interface {
 	Weight() float64
 
 	Raw() Node
+
+	Pick() DoneFunc
+
+	PickLastTime() int64
 }
 
 type Balancer interface {
