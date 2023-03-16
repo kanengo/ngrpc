@@ -7,7 +7,7 @@ import (
 type Registrar interface {
 	Register(ctx context.Context, ins *ServiceInstance) error
 
-	DeRegister(ctx context.Context, ins *ServiceInstance) error
+	Deregister(ctx context.Context, ins *ServiceInstance) error
 }
 
 type Discovery interface {

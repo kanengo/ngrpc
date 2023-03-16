@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kanengo/ngrpc/registry"
@@ -20,6 +21,7 @@ type options struct {
 	namespace string
 	ttl       time.Duration
 	maxRetry  int
+	timeout   time.Duration
 }
 
 type Option func(*options)
@@ -43,6 +45,10 @@ func MaxRetry(num int) Option {
 	return func(o *options) { o.maxRetry = num }
 }
 
+func Timeout(timeout time.Duration) Option {
+	return func(o *options) { o.timeout = timeout }
+}
+
 type Registry struct {
 	opts   *options
 	client *clientv3.Client
@@ -55,6 +61,7 @@ func New(client *clientv3.Client, opt ...Option) *Registry {
 		namespace: "",
 		ttl:       time.Second * 15,
 		maxRetry:  5,
+		timeout:   time.Second * 3,
 	}
 
 	for _, o := range opt {
@@ -70,25 +77,41 @@ func New(client *clientv3.Client, opt ...Option) *Registry {
 }
 
 func (r *Registry) ListService(ctx context.Context, serviceName string) ([]*registry.ServiceInstance, error) {
-	//TODO implement me
-	panic("implement me")
+	key := fmt.Sprintf("%s/%s", r.opts.namespace, serviceName)
+	resp, err := r.client.Get(ctx, key, clientv3.WithPrefix())
+	if err != nil {
+		return nil, err
+	}
+	ins := make([]*registry.ServiceInstance, 0, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		in, err := unmarshal(kv.Value)
+		if err != nil {
+			return nil, err
+		}
+		if in.Name != serviceName {
+			continue
+		}
+		ins = append(ins, in)
+	}
+
+	return ins, nil
 }
 
 func (r *Registry) Watch(ctx context.Context, serviceName string) (registry.Watcher, error) {
-	//TODO implement me
-	panic("implement me")
+	key := fmt.Sprintf("%s/%s", r.opts.namespace, serviceName)
+	return newWatcher(ctx, key, serviceName, r.client, r)
 }
 
 func (r *Registry) Register(ctx context.Context, ins *registry.ServiceInstance) error {
 	key := fmt.Sprintf("%s/%s/%s", r.opts.namespace, ins.Name, ins.ID)
-	b, err := json.Marshal(ins)
+	value, err := marshal(ins)
 	if err != nil {
 		return err
 	}
 	if r.lease != nil {
 		_ = r.lease.Close()
 	}
-	value := string(b)
+
 	r.lease = clientv3.NewLease(r.client)
 	leaseID, err := r.registerWithKV(r.opts.ctx, key, value)
 	if err != nil {
@@ -100,7 +123,7 @@ func (r *Registry) Register(ctx context.Context, ins *registry.ServiceInstance) 
 	return nil
 }
 
-func (r *Registry) DeRegister(ctx context.Context, ins *registry.ServiceInstance) error {
+func (r *Registry) Deregister(ctx context.Context, ins *registry.ServiceInstance) error {
 	key := fmt.Sprintf("%s/%s/%s", r.opts.namespace, ins.Name, ins.ID)
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer func() {
@@ -168,4 +191,20 @@ func (r *Registry) heartbeat(ctx context.Context, leaseID clientv3.LeaseID, key,
 			return
 		}
 	}
+}
+
+func marshal(data any) (string, error) {
+	b := &strings.Builder{}
+	enc := json.NewEncoder(b)
+	err := enc.Encode(data)
+	if err != nil {
+		return "", err
+	}
+
+	return b.String(), nil
+}
+
+func unmarshal(data []byte) (in *registry.ServiceInstance, err error) {
+	err = json.Unmarshal(data, &in)
+	return
 }
