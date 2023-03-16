@@ -3,7 +3,9 @@ package ewma
 import (
 	"container/list"
 	"context"
+	stderrors "errors"
 	"math"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,8 +38,9 @@ type Node struct {
 
 	inflights *list.List //当前进行中的请求
 
-	lastPick int64
-	mu       sync.RWMutex
+	lastPick   int64
+	mu         sync.RWMutex
+	errHandler func(err error) bool
 }
 
 func (n *Node) PickLastTime() int64 {
@@ -136,6 +139,12 @@ func (n *Node) Pick() selector.DoneFunc {
 			err := errors.FromError(di.Err)
 			if err.Internal() {
 				success = 0
+			} else {
+				var netError net.Error
+				if stderrors.Is(context.DeadlineExceeded, di.Err) || stderrors.Is(context.Canceled, di.Err) ||
+					stderrors.As(di.Err, &netError) {
+					success = 0
+				}
 			}
 		}
 		oldSuccess := atomic.LoadUint64(&n.success)
@@ -145,14 +154,16 @@ func (n *Node) Pick() selector.DoneFunc {
 }
 
 type Builder struct {
+	ErrHandler func(err error) bool
 }
 
 func (b *Builder) Build(node selector.Node) selector.WeightNode {
 	n := Node{
-		Node:      node,
-		success:   1000,
-		inflight:  1,
-		inflights: list.New(),
+		Node:       node,
+		success:    1000,
+		inflight:   1,
+		inflights:  list.New(),
+		errHandler: b.ErrHandler,
 	}
 
 	return &n

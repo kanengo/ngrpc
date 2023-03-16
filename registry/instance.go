@@ -18,5 +18,5 @@ type ServiceInstance struct {
 }
 
 func (i *ServiceInstance) String() string {
-	return fmt.Sprintf("%s-%s", i.Name, i.ID)
+	return fmt.Sprintf("%s.%s", i.Name, i.ID)
 }

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	Name      = "P2C"
+	Name      = "p2c"
 	pickTimes = 3
 
 	forcePick = 5
