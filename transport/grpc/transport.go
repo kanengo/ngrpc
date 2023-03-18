@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"github.com/kanengo/ngrpc/selector"
 	"github.com/kanengo/ngrpc/transport"
 	"google.golang.org/grpc/metadata"
 )
@@ -10,6 +11,7 @@ type Transport struct {
 	fullMethod  string
 	reqHeader   headerCarrier
 	replyHeader headerCarrier
+	nodeFilters []selector.Filter[selector.Node]
 }
 
 func (t *Transport) Kind() transport.Kind {
@@ -30,6 +32,10 @@ func (t *Transport) RequestHeader() transport.Header {
 
 func (t *Transport) ReplyHeader() transport.Header {
 	return t.replyHeader
+}
+
+func (t *Transport) NodeFilters() []selector.Filter[selector.Node] {
+	return t.nodeFilters
 }
 
 type headerCarrier metadata.MD

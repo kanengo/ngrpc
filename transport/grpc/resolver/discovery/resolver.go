@@ -78,7 +78,7 @@ func (r *discoveryResolver) update(ins []*registry.ServiceInstance) {
 		addr := resolver.Address{
 			Addr:       ept,
 			ServerName: in.Name,
-			Attributes: parseAttribute(in.Metadata),
+			Attributes: parseAttributes(in.Metadata),
 		}
 		addr.Attributes.WithValue("__ServiceInstance__", in)
 	}
@@ -96,7 +96,7 @@ func (r *discoveryResolver) update(ins []*registry.ServiceInstance) {
 	}
 }
 
-func parseAttribute(metadata map[string]string) *attributes.Attributes {
+func parseAttributes(metadata map[string]string) *attributes.Attributes {
 	var attr *attributes.Attributes
 	for k, v := range metadata {
 		attr.WithValue(k, v)

@@ -137,12 +137,15 @@ func (r *Registry) Deregister(ctx context.Context, ins *registry.ServiceInstance
 }
 
 func (r *Registry) registerWithKV(ctx context.Context, key, val string) (clientv3.LeaseID, error) {
-	grant, err := r.lease.Grant(ctx, int64(r.opts.ttl.Seconds()))
+	timeoutCtx, cancel := context.WithTimeout(ctx, r.opts.timeout)
+	grant, err := r.lease.Grant(timeoutCtx, int64(r.opts.ttl.Seconds()))
+	cancel()
 	if err != nil {
 		return 0, err
 	}
-
-	_, err = r.client.Put(ctx, key, val, clientv3.WithLease(grant.ID))
+	timeoutCtx, cancel = context.WithTimeout(ctx, r.opts.timeout)
+	_, err = r.client.Put(timeoutCtx, key, val, clientv3.WithLease(grant.ID))
+	cancel()
 	if err != nil {
 		return 0, err
 	}
@@ -164,10 +167,8 @@ func (r *Registry) heartbeat(ctx context.Context, leaseID clientv3.LeaseID, key,
 					return
 				}
 
-				timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*3)
-				id, err := r.registerWithKV(timeoutCtx, key, val)
-				cancel()
-				if err == nil {
+				id, err := r.registerWithKV(ctx, key, val)
+				if err != nil {
 					continue
 				}
 				curLeaseID = id

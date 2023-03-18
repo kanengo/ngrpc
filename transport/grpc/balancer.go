@@ -3,6 +3,7 @@ package grpc
 import (
 	"github.com/kanengo/ngrpc/registry"
 	"github.com/kanengo/ngrpc/selector"
+	"github.com/kanengo/ngrpc/selector/balancer/p2c"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/base"
 	"google.golang.org/grpc/metadata"
@@ -18,6 +19,9 @@ const (
 )
 
 func init() {
+	if selector.GlobalSelectorBuilder() == nil {
+		selector.SetGlobalSelector(p2c.NewBuilder())
+	}
 	b := base.NewBalancerBuilder(balancerName, &balancerPickerBuilder{
 		selector.GlobalSelectorBuilder(),
 	}, base.Config{HealthCheck: true})

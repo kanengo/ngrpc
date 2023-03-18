@@ -8,12 +8,17 @@ import (
 
 	"github.com/kanengo/ngrpc/middleware"
 	"github.com/kanengo/ngrpc/registry"
+	"github.com/kanengo/ngrpc/selector"
 	"github.com/kanengo/ngrpc/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	grpcinsecure "google.golang.org/grpc/credentials/insecure"
 	grpcmd "google.golang.org/grpc/metadata"
 )
+
+func init() {
+
+}
 
 type ClientOption func(options *clientOptions)
 
@@ -59,6 +64,12 @@ func WithOptions(opts ...grpc.DialOption) ClientOption {
 	}
 }
 
+func WithNodeFilters(nodeFilters ...selector.Filter[selector.Node]) ClientOption {
+	return func(options *clientOptions) {
+		options.nodeFilters = nodeFilters
+	}
+}
+
 type clientOptions struct {
 	endpoint     string
 	tlsConf      *tls.Config
@@ -68,6 +79,7 @@ type clientOptions struct {
 	grpcOpts     []grpc.DialOption
 	discovery    registry.Discovery
 	balancerName string
+	nodeFilters  []selector.Filter[selector.Node]
 }
 
 func Dial(ctx context.Context, opts ...ClientOption) (*grpc.ClientConn, error) {
@@ -88,7 +100,7 @@ func dial(ctx context.Context, insecure bool, opts ...ClientOption) (*grpc.Clien
 	}
 
 	ints := []grpc.UnaryClientInterceptor{
-		unaryClientInterceptor(options.middleware, options.timeout),
+		unaryClientInterceptor(options.middleware, options.timeout, options.nodeFilters),
 	}
 
 	if len(options.ints) > 0 {
@@ -119,13 +131,14 @@ func dial(ctx context.Context, insecure bool, opts ...ClientOption) (*grpc.Clien
 	return grpc.DialContext(ctx, options.endpoint, grpcOpts...)
 }
 
-func unaryClientInterceptor(ms []middleware.Middleware, timeout time.Duration) grpc.UnaryClientInterceptor {
+func unaryClientInterceptor(ms []middleware.Middleware, timeout time.Duration, nodeFilters []selector.Filter[selector.Node]) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		ctx = transport.NewClientContext(ctx, &Transport{
 			endpoint:    cc.Target(),
 			fullMethod:  method,
 			reqHeader:   headerCarrier{},
 			replyHeader: nil,
+			nodeFilters: nodeFilters,
 		})
 		if timeout > 0 {
 			var cancel context.CancelFunc

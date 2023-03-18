@@ -84,3 +84,7 @@ func NewBuilder() selector.Builder {
 		BalancerBuilder:   &Builder{},
 	}
 }
+
+func New() selector.Selector {
+	return NewBuilder().Build()
+}
