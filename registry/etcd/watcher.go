@@ -26,7 +26,8 @@ type watcher struct {
 	watcher     clientv3.Watcher
 	serviceName string
 
-	r *Registry
+	r      *Registry
+	ticker *time.Ticker
 }
 
 func newWatcher(ctx context.Context, key string, serviceName string, client *clientv3.Client, r *Registry) (*watcher, error) {
@@ -39,7 +40,9 @@ func newWatcher(ctx context.Context, key string, serviceName string, client *cli
 		watcher:     clientv3.NewWatcher(client),
 		serviceName: serviceName,
 		r:           r,
+		ticker:      time.NewTicker(time.Minute),
 	}
+
 	w.ctx, w.cancel = context.WithCancel(ctx)
 	w.watchChan = w.watcher.Watch(w.ctx, key, clientv3.WithPrefix(), clientv3.WithRev(0), clientv3.WithKeysOnly())
 	err := w.watcher.RequestProgress(w.ctx)
@@ -65,6 +68,8 @@ func (w *watcher) Next() ([]*registry.ServiceInstance, error) {
 		}
 		//log.Info("Next", zap.Any("watchResp", watchResp))
 		return w.getInstance()
+	case <-w.ticker.C:
+		return w.getInstance()
 	}
 }
 
@@ -82,6 +87,7 @@ func (w *watcher) reWatch() error {
 }
 
 func (w *watcher) Stop() error {
+	w.ticker.Stop()
 	w.cancel()
 	return w.watcher.Close()
 }
